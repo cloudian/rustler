@@ -101,6 +101,6 @@ defmodule RustlerTest.CodegenTest do
       RustlerTest.untagged_enum_with_truthy(%AddStruct{lhs: 45, rhs: 123})
     assert true == RustlerTest.untagged_enum_with_truthy([1,2,3,4])
     assert false == RustlerTest.untagged_enum_with_truthy(false)
-    assert false == RustlerTest.untagged_enum_with_truthy(nil)
+    assert false == RustlerTest.untagged_enum_with_truthy(:undefined)
   end
 end

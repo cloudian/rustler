@@ -120,7 +120,7 @@ impl<'a> Term<'a> {
 }
 
 pub fn is_truthy(term: Term) -> bool {
-    !((term.as_c_arg() == false_().as_c_arg()) || (term.as_c_arg() == nil().as_c_arg()))
+    !((term.as_c_arg() == false_().as_c_arg()) || (term.as_c_arg() == undefined().as_c_arg()))
 }
 
 pub(in crate::types) fn decode_bool(term: Term) -> NifResult<bool> {
@@ -234,8 +234,8 @@ macro_rules! rustler_atoms {
 }
 
 rustler_atoms! {
-    /// The `nil` atom.
-    atom nil;
+    /// The `undefined` atom, commonly used in Erlang.
+    atom undefined;
 
     /// The `ok` atom, commonly used in success tuples.
     atom ok;
