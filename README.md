@@ -1,8 +1,11 @@
 # Rustler
 
-[Documentation](https://docs.rs/crate/rustler) | [Getting Started](https://github.com/rusterlium/rustler/blob/master/README.md#getting-started) | [Example](https://github.com/hansihe/NifIo)
+[Documentation](https://docs.rs/rustler/latest/rustler) | [Getting Started](https://github.com/rusterlium/rustler/blob/master/README.md#getting-started) | [Example](https://github.com/rusterlium/NifIo)
 
-[![Build Status](https://travis-ci.org/rusterlium/rustler.svg?branch=master)](https://travis-ci.org/rusterlium/rustler)
+[![Build Status](https://github.com/rusterlium/rustler/workflows/CI/badge.svg?branch=master)](https://github.com/rusterlium/rustler/actions/workflows/main.yml)
+[![Hex.pm package version](https://img.shields.io/hexpm/v/rustler.svg)](https://hex.pm/packages/rustler)
+[![Crates.io package version](https://img.shields.io/crates/v/rustler.svg)](https://crates.io/crates/rustler)
+[![Last Updated](https://img.shields.io/github/last-commit/rusterlium/rustler.svg)](https://github.com/rusterlium/rustler/commits/master)
 
 Rustler is a library for writing Erlang NIFs in safe Rust code. That means
 there should be no ways to crash the BEAM (Erlang VM). The library provides
@@ -35,44 +38,33 @@ NOTE: If you have previously used Rustler, you need to run `mix archive.uninstal
 This is the code for a minimal NIF that adds two numbers and returns the result.
 
 ```rust
-use rustler::{Encoder, Env, Error, Term};
-
-mod atoms {
-    rustler::rustler_atoms! {
-        atom ok;
-    }
+#[rustler::nif]
+fn add(a: i64, b: i64) -> i64 {
+    a + b
 }
 
-rustler::rustler_export_nifs!(
-    "Elixir.Math",
-    [
-        ("add", 2, add)
-    ],
-    None
-);
-
-fn add<'a>(env: Env<'a>, args: &[Term<'a>]) -> Result<Term<'a>, Error> {
-    let a: i64 = args[0].decode()?;
-    let b: i64 = args[1].decode()?;
-
-    Ok((atoms::ok(), a + b).encode(env))
-}
+rustler::init!("Elixir.Math", [add]);
 ```
 
-#### Supported nif_version
+#### Supported OTP and Elixir Versions
+
+Rustler aims to support the newest three major OTP versions as well as newest three minor Elixir versions.
+
+#### Supported NIF version
 
 Rustler uses `erlang:system_info(nif_version)` to detect the supported NIF version of the Erlang/OTP
 system for which the NIF is to be compiled. It is possible to restrict the NIF version to an older
 version if the NIF is to be compiled for an older version of Erlang. For example, if the target NIF
-version should be `2.7` (Erlang/OTP 17.3), this can be defined using an environment variable:
+version should be `2.14` (Erlang/OTP 21), this can be defined using an environment variable:
 
 ```
-RUSTLER_NIF_VERSION=2.7 mix compile
+RUSTLER_NIF_VERSION=2.14 mix compile
 ```
 
 #### Community
 
-You can find us in `#rustler` on [freenode](http://freenode.net/) or [the elixir-lang slack](https://elixir-slackin.herokuapp.com/).
+You can find us in the `#rustler:matrix.org` channel on [Matrix](https://matrix.to/#/#rustler:matrix.org)
+or in the `#rustler` channel in [the Elixir lang Slack](https://elixir-slackin.herokuapp.com/).
 
 #### License
 

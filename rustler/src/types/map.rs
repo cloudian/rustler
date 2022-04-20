@@ -25,9 +25,10 @@ impl<'a> Term<'a> {
     ///
     /// ### Elixir equivalent
     /// ```elixir
+    /// keys = ["foo", "bar"]
+    /// values = [1, 2]
     /// List.zip(keys, values) |> Map.new()
     /// ```
-    #[cfg(nif_version_2_14)]
     pub fn map_from_arrays(
         env: Env<'a>,
         keys: &[Term<'a>],
@@ -46,17 +47,26 @@ impl<'a> Term<'a> {
         }
     }
 
-    // Fallback for older NIF version
-    #[cfg(not(nif_version_2_14))]
-    pub fn map_from_arrays(
-        env: Env<'a>,
-        keys: &[Term<'a>],
-        values: &[Term<'a>],
-    ) -> NifResult<Term<'a>> {
-        let map = map_new(env);
-        keys.iter()
-            .zip(values.iter())
-            .try_fold(map, |map, (k, v)| map.map_put(*k, *v))
+    /// Construct a new map from pairs of terms
+    ///
+    /// It is similar to `map_from_arrays` but
+    /// receives only one vector with the pairs
+    /// of `(key, value)`.
+    ///
+    /// ### Elixir equivalent
+    /// ```elixir
+    /// Map.new([{"foo", 1}, {"bar", 2}])
+    /// ```
+    pub fn map_from_pairs(env: Env<'a>, pairs: &[(Term<'a>, Term<'a>)]) -> NifResult<Term<'a>> {
+        let (keys, values): (Vec<_>, Vec<_>) = pairs
+            .iter()
+            .map(|(k, v)| (k.as_c_arg(), v.as_c_arg()))
+            .unzip();
+
+        unsafe {
+            map::make_map_from_arrays(env.as_c_arg(), &keys, &values)
+                .map_or_else(|| Err(Error::BadArg), |map| Ok(Term::new(env, map)))
+        }
     }
 
     /// Gets the value corresponding to a key in a map term.
@@ -234,6 +244,12 @@ where
 
         let first = term.map_get(atom::first().to_term(env))?.decode::<T>()?;
         let last = term.map_get(atom::last().to_term(env))?.decode::<T>()?;
+        if let Ok(step) = term.map_get(atom::step().to_term(env)) {
+            match step.decode::<i64>()? {
+                1 => (),
+                _ => return Err(Error::BadArg),
+            }
+        }
 
         Ok(first..=last)
     }

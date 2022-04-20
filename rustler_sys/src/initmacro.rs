@@ -56,8 +56,6 @@ macro_rules! platform_nif_init {
 ///
 /// # Examples
 /// ```
-/// #[macro_use]
-/// extern crate rustler_sys;
 /// use rustler_sys::*;
 /// use std::mem;
 ///
@@ -92,7 +90,7 @@ macro_rules! slice_args {
     }};
 }
 
-/// Internal macro for implenting a ErlNifEntry-creating function.
+/// Internal macro for implementing a ErlNifEntry-creating function.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! get_entry {
@@ -209,7 +207,7 @@ macro_rules! make_func_entry {
     };
 
     (($name:expr, $arity:expr, $function:expr)) => {
-        make_func_entry!(($name, $arity, $function, 0));
+        make_func_entry!(($name, $arity, $function, 0))
     };
 }
 
@@ -278,7 +276,6 @@ mod initmacro_namespace_tests {
     // use rustler_sys_api::*;
     use crate::rustler_sys_api;
 
-    use std;
     use std::ffi::{CStr, CString};
     use std::ptr;
     use std::slice;
@@ -350,13 +347,12 @@ mod initmacro_namespace_tests {
         });
         assert_eq!(0, funcs[0].flags);
     }
-
 }
 
 #[cfg(test)]
 mod initmacro_tests {
     use crate::rustler_sys_api::*;
-    use std;
+
     use std::ffi::{CStr, CString};
     use std::ptr;
     use std::slice;
@@ -629,5 +625,4 @@ mod initmacro_tests {
         });
         assert_eq!(0, funcs[0].flags);
     }
-
 }

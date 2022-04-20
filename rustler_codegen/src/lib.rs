@@ -1,19 +1,12 @@
 #![recursion_limit = "128"]
 
-extern crate proc_macro;
 use proc_macro::TokenStream;
 
-extern crate heck;
-extern crate proc_macro2;
-extern crate syn;
-
-#[macro_use]
-extern crate quote;
-
-use syn::{Lit, Meta, MetaList, NestedMeta};
-
+mod context;
 mod ex_struct;
+mod init;
 mod map;
+mod nif;
 mod record;
 mod tuple;
 mod unit_enum;
@@ -27,113 +20,83 @@ enum RustlerAttr {
     Tag(String),
 }
 
-#[derive(Debug)]
-struct Context {
-    attrs: Vec<RustlerAttr>,
-}
-
-impl Context {
-    fn from_ast(ast: &syn::DeriveInput) -> Self {
-        let mut attrs: Vec<_> = ast
-            .attrs
-            .iter()
-            .filter_map(Context::get_rustler_attrs)
-            .flatten()
-            .collect();
-
-        //
-        // Default: generate encoder and decoder
-        //
-        if !Context::encode_decode_attr_set(&attrs) {
-            attrs.push(RustlerAttr::Encode);
-            attrs.push(RustlerAttr::Decode);
-        }
-
-        Self { attrs }
-    }
-
-    fn encode(&self) -> bool {
-        self.attrs.iter().any(|attr| match attr {
-            RustlerAttr::Encode => true,
-            _ => false,
-        })
-    }
-
-    fn decode(&self) -> bool {
-        self.attrs.iter().any(|attr| match attr {
-            RustlerAttr::Decode => true,
-            _ => false,
-        })
-    }
-
-    fn encode_decode_attr_set(attrs: &[RustlerAttr]) -> bool {
-        attrs.iter().any(|attr| match attr {
-            RustlerAttr::Encode => true,
-            RustlerAttr::Decode => true,
-            _ => false,
-        })
-    }
-
-    fn get_rustler_attrs(attr: &syn::Attribute) -> Option<Vec<RustlerAttr>> {
-        if attr.path.segments.len() == 1 && attr.path.segments[0].ident == "rustler" {
-            let meta = attr.parse_meta().expect("can parse meta");
-            match meta {
-                Meta::List(list) => Some(Context::parse_attribute_list(list)),
-                Meta::Word(word) => {
-                    panic!("Unexpected Ident {}", word);
-                }
-                Meta::NameValue(name_value) => {
-                    panic!("Unexpected name-value {}", name_value.ident);
-                }
-            }
-        } else {
-            None
-        }
-    }
-
-    fn parse_attribute_list(list: MetaList) -> Vec<RustlerAttr> {
-        list.nested
-            .iter()
-            .map(|nested| match nested {
-                NestedMeta::Meta(meta) => match meta.name().to_string().as_ref() {
-                    "encode" => RustlerAttr::Encode,
-                    "decode" => RustlerAttr::Decode,
-                    "module" => match meta {
-                        Meta::NameValue(name_value) => {
-                            let module = match name_value.lit {
-                                Lit::Str(ref module) => module.value(),
-                                _ => panic!("Cannot parse module"),
-                            };
-                            RustlerAttr::Module(module)
-                        }
-                        _ => panic!("Cannot parse module"),
-                    },
-                    "tag" => match meta {
-                        Meta::NameValue(name_value) => {
-                            let tag = match name_value.lit {
-                                Lit::Str(ref tag) => tag.value(),
-                                _ => panic!("Cannot parse tag"),
-                            };
-                            RustlerAttr::Tag(tag)
-                        }
-                        _ => panic!("Cannot parse tag"),
-                    },
-                    attribute => panic!("Unhandled attribute {}", attribute),
-                },
-                NestedMeta::Literal(lit) => match lit {
-                    Lit::Str(lit_str) => panic!("Unexpected literal {}", lit_str.value()),
-                    _ => panic!("Unexpected literal"),
-                },
-            })
-            .collect()
-    }
-}
-
-/// Implementation of the `NifStruct` macro that lets the user annotate a struct that will
-/// be translated directly from an Elixir struct to a Rust struct. For example, the following
-/// struct, annotated as such:
+/// Initialise the Native Implemented Function (NIF) environment
+/// and register NIF functions in an Elixir module.
 ///
-/// ```text
+/// ```ignore
+/// #[rustler::nif]
+/// fn add(a: i64, b: i64) -> i64 {
+///     a + b
+/// }
+///
+/// #[rustler::nif]
+/// fn sub(a: i64, b: i64) -> i64 {
+///     a - b
+/// }
+///
+/// #[rustler::nif]
+/// fn mul(a: i64, b: i64) -> i64 {
+///     a * b
+/// }
+///
+/// #[rustler::nif]
+/// fn div(a: i64, b: i64) -> i64 {
+///     a / b
+/// }
+///
+/// rustler::init!("Elixir.Math", [add, sub, mul, div], Some(load));
+/// ```
+#[proc_macro]
+pub fn init(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as init::InitMacroInput);
+    let output: proc_macro2::TokenStream = input.into();
+    output.into()
+}
+
+/// Wrap a function in a Native Implemented Function (NIF) implementation,
+/// so that it can be called from Elixir,
+/// with all encoding and decoding steps done automatically.
+///
+/// ```ignore
+/// #[nif]
+/// fn add(a: i64, b: i64) -> i64 {
+///     a + b
+/// }
+/// ```
+///
+/// For functions that may take some time to return - let's say more than 1 millisecond - it is
+/// recommended to use the `schedule` flag. This tells the BEAM to allocate that NIF call
+/// to a special scheduler. These special schedulers are called "dirty" schedulers.
+///
+/// We can have two types of "lengthy work" functions: those that are CPU intensive
+/// and those that are IO intensive. They should be flagged with "DirtyCpu" and "DirtyIo",
+/// respectively.
+///
+/// See: <https://www.erlang.org/doc/man/erl_nif.html#lengthy_work>
+///
+/// ```ignore
+/// #[nif(schedule = "DirtyCpu")]
+/// pub fn my_lengthy_work() -> i64 {
+///     let duration = Duration::from_millis(100);
+///     std::thread::sleep(duration);
+///
+///     42
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn nif(args: TokenStream, input: TokenStream) -> TokenStream {
+    let args = syn::parse_macro_input!(args as syn::AttributeArgs);
+    let input = syn::parse_macro_input!(input as syn::ItemFn);
+
+    nif::transcoder_decorator(args, input).into()
+}
+
+/// Derives implementations for the `Encoder` and `Decoder` traits
+/// which convert between an Elixir struct and a Rust struct.
+///
+/// For example, annotate the following Rust struct:
+///
+/// ```ignore
 /// #[derive(Debug, NifStruct)]
 /// #[module = "AddStruct"]
 /// struct AddStruct {
@@ -142,24 +105,58 @@ impl Context {
 /// }
 /// ```
 ///
-/// This would be translated by Rustler into:
+/// Write the following corresponding Elixir struct definition:
 ///
-/// ```text
+/// ```elixir
 /// defmodule AddStruct do
-///     defstruct lhs: 0, rhs: 0
+///   defstruct lhs: 0, rhs: 0
 /// end
 /// ```
+///
+/// Then the traits `Encoder` and `Decoder` are derived automatically for your Rust struct
+/// such that you can use the Elixir struct definition for it.
+
 #[proc_macro_derive(NifStruct, attributes(module, rustler))]
 pub fn nif_struct(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
-    ex_struct::transcoder_decorator(&ast).into()
+    ex_struct::transcoder_decorator(&ast, false).into()
 }
 
-/// Implementation of a macro that lets the user annotate a struct with `NifMap` so that the
-/// struct can be encoded or decoded from an Elixir map. For example, the following struct
-/// annotated as such:
+/// Derives implementations for the `Encoder` and `Decoder` traits
+/// which convert between an Elixir exception and a Rust struct.
 ///
-/// ```text
+/// For example, annotate the following struct:
+///
+/// ```ignore
+/// #[derive(Debug, NifException)]
+/// #[module = "AddException"]
+/// pub struct AddException {
+///     message: String,
+/// }
+/// ```
+///
+/// Write the corresponding Elixir exception definition:
+///
+/// ```elixir
+/// defmodule AddException do
+///   defexception message: ""
+/// end
+/// ```
+///
+/// Then the traits `Encoder` and `Decoder` are derived automatically for your Rust struct
+/// such that you can use the Elixir exception definition for it.
+#[proc_macro_derive(NifException, attributes(module, rustler))]
+pub fn nif_exception(input: TokenStream) -> TokenStream {
+    let ast = syn::parse(input).unwrap();
+    ex_struct::transcoder_decorator(&ast, true).into()
+}
+
+/// Derives implementations for the `Encoder` and `Decoder` traits
+/// which convert between Rust struct and an Elixir map.
+///
+/// For example, annotate the following struct:
+///
+/// ```ignore
 /// #[derive(NifMap)]
 /// struct AddMap {
 ///     lhs: i32,
@@ -167,23 +164,33 @@ pub fn nif_struct(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// Given the values 33 and 21 for this struct, this would result, when encoded, in an elixir
+/// Create a value of that type:
+///
+/// ```ignore
+/// let value = AddMap { lhs: 33, rhs: 21 };
+/// ```
+///
+/// Then the traits `Encoder` and `Decoder` are derived automatically for your Rust struct
+/// such that encoding `value` would result in an elixir
 /// map with two elements like:
 ///
-/// ```text
+/// ```elixir
 /// %{lhs: 33, rhs: 21}
 /// ```
+///
+/// And vice versa, decoding this map would result in `value`.
 #[proc_macro_derive(NifMap, attributes(rustler))]
 pub fn nif_map(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
     map::transcoder_decorator(&ast).into()
 }
 
-/// Implementation of a macro that lets the user annotate a struct with `NifTuple` so that the
-/// struct can be encoded or decoded from an Elixir tuple. For example, the following struct
-/// annotated as such:
+/// Derives implementations for the `Encoder` and `Decoder` traits
+/// which convert between a Rust struct and an Elixir tuple.
 ///
-/// ```text
+/// For example, annotate the following struct:
+///
+/// ```ignore
 /// #[derive(NifTuple)]
 /// struct AddTuple {
 ///     lhs: i32,
@@ -191,12 +198,21 @@ pub fn nif_map(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// Given the values 33 and 21 for this struct, this would result, when encoded, in an elixir
+/// Create a value of that type:
+///
+/// ```ignore
+/// let value = AddMap { lhs: 33, rhs: 21 };
+/// ```
+///
+/// Then the traits `Encoder` and `Decoder` are derived automatically for your Rust struct
+/// such that encoding `value` would result in an elixir
 /// tuple with two elements like:
 ///
-/// ```text
+/// ```elixir
 /// {33, 21}
 /// ```
+///
+/// And vice versa, decoding this map would result in `value`.
 ///
 /// The size of the tuple will depend on the number of elements in the struct.
 #[proc_macro_derive(NifTuple, attributes(rustler))]
@@ -205,11 +221,12 @@ pub fn nif_tuple(input: TokenStream) -> TokenStream {
     tuple::transcoder_decorator(&ast).into()
 }
 
-/// Implementation of the `NifRecord` macro that lets the user annotate a struct that will
-/// be translated directly from an Elixir struct to a Rust struct. For example, the following
-/// struct, annotated as such:
+/// Derives implementations for the `Encoder` and `Decoder` traits
+/// which convert between a Rust struct and an Elixir record.
 ///
-/// ```text
+/// For example, annotate the following struct:
+///
+/// ```ignore
 /// #[derive(Debug, NifRecord)]
 /// #[tag = "record"]
 /// struct AddRecord {
@@ -218,24 +235,43 @@ pub fn nif_tuple(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// This would be translated by Rustler into:
+/// Create a value of that type:
 ///
-/// ```text
+/// ```ignore
+/// let value = AddRecord { lhs: 33, rhs: 21 };
+/// ```
+///
+/// Then the traits `Encoder` and `Decoder` are derived automatically for your Rust struct
+/// such that `value` would be encoded into the following elixir value:
+///
+/// ```elixir
+/// {:record, 33, 21}
+/// ```
+///
+/// If you supply the following matching Elixir record definition:
+///
+/// ```elixir
 /// defmodule AddRecord do
-///     import Record
-///     defrecord :record, [lhs: 1, rhs: 2]
+///   import Record
+///   defrecord :record, [lhs: 1, rhs: 2]
 /// end
 /// ```
+///
+/// Then you can use record functions such as `AddRecord.record/0`, `AddRecord.record/1`, `AddRecord.record/2`,
+/// to work with the encoded data,
+/// and to create data that can be decoded back into your Rust struct.
 #[proc_macro_derive(NifRecord, attributes(tag, rustler))]
 pub fn nif_record(input: TokenStream) -> TokenStream {
     let ast = syn::parse(input).unwrap();
     record::transcoder_decorator(&ast).into()
 }
 
-/// Implementation of the `NifUnitEnum` macro that lets the user annotate an enum with a unit type
-/// that will generate elixir atoms when encoded
+/// Derives implementations for the `Encoder` and `Decoder` traits
+/// which convert between an enum and a union of elixir atoms.
 ///
-/// ```text
+/// For example:
+///
+/// ```ignore
 /// #[derive(NifUnitEnum)]
 /// enum UnitEnum {
 ///    FooBar,
@@ -243,13 +279,27 @@ pub fn nif_record(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// An example usage in elixir would look like the following.
+/// Then the traits `Encoder` and `Decoder` are derived automatically for your Rust struct
+/// such that `FooBar` is encoded to, and decoded from, `:foo_bar`.
+/// - The variant name is translated from camel case to snake case for the atom name.
+/// - Each constructor is required not to have arguments, i.e. to be of unit type.
 ///
-/// ```text
+/// An example usage in Rust and Elixir would look like the following.
+///
+/// ```ignore
+/// #[rustler::nif]
+/// pub fn unit_enum_echo(unit_enum: UnitEnum) -> UnitEnum {
+///     unit_enum
+/// }
+/// ```
+///
+/// (We are leaving out some boiler plate code to connect the rust code to elixir functions.)
+///
+/// ```elixir
 /// test "unit enum transcoder" do
-///    assert :foo_bar == RustlerTest.unit_enum_echo(:foo_bar)
-///    assert :baz == RustlerTest.unit_enum_echo(:baz)
-///    assert :invalid_variant == RustlerTest.unit_enum_echo(:somethingelse)
+///   assert :foo_bar == unit_enum_echo(:foo_bar)
+///   assert :baz == unit_enum_echo(:baz)
+///   assert :invalid_variant == unit_enum_echo(:somethingelse)
 /// end
 /// ```
 ///
@@ -261,11 +311,17 @@ pub fn nif_unit_enum(input: TokenStream) -> TokenStream {
     unit_enum::transcoder_decorator(&ast).into()
 }
 
-/// Implementation of the `NifUntaggedEnum` macro that lets the user annotate an enum that will
-/// generate elixir values when decoded. This can be used for rust enums that contain data and
-/// will generate a value based on the kind of data encoded. For example from the test code:
+/// Derives implementations for the `Encoder` and `Decoder` traits
+/// which convert between a Rust enum and a union of Elixir types.
 ///
-/// ```text
+/// This can be used for Rust enums that contain several constructors containing different types of data,
+/// each implementing the `Encoder` and `Decoder` traits.
+/// An enum value will be encoded based on the constructor used,
+/// and an Elixir value will be decoded based on the value.
+///
+/// For example from the test code:
+///
+/// ```ignore
 /// #[derive(NifUntaggedEnum)]
 /// enum UntaggedEnum {
 ///     Foo(u32),
@@ -273,21 +329,22 @@ pub fn nif_unit_enum(input: TokenStream) -> TokenStream {
 ///     Baz(AddStruct),
 /// }
 ///
-/// pub fn untagged_enum_echo<'a>(env: Env<'a>, args: &[Term<'a>]) -> NifResult<Term<'a>> {
-///     let untagged_enum: UntaggedEnum = args[0].decode()?;
-///     Ok(untagged_enum.encode(env))
+/// #[rustler::nif]
+/// pub fn untagged_enum_echo(untagged_enum: UntaggedEnum) -> UntaggedEnum {
+///     untagged_enum
 /// }
 /// ```
 ///
-/// This can be used from elixir in the following manner.
+/// Adding boiler plate code to connect Rust code to elixir functions,
+/// this can be used from elixir in the following manner.
 ///
-/// ```text
-///   test "untagged enum transcoder" do
-///    assert 123 == RustlerTest.untagged_enum_echo(123)
-///    assert "Hello" == RustlerTest.untagged_enum_echo("Hello")
-///    assert %AddStruct{lhs: 45, rhs: 123} = RustlerTest.untagged_enum_echo(%AddStruct{lhs: 45, rhs: 123})
-///    assert :invalid_variant == RustlerTest.untagged_enum_echo([1,2,3,4])
-///  end
+/// ```elixir
+/// test "untagged enum transcoder" do
+///   assert 123 == untagged_enum_echo(123)
+///   assert "Hello" == untagged_enum_echo("Hello")
+///   assert %AddStruct{lhs: 45, rhs: 123} = untagged_enum_echo(%AddStruct{lhs: 45, rhs: 123})
+///   assert :invalid_variant == untagged_enum_echo([1,2,3,4])
+/// end
 /// ```
 ///
 /// Note that the type of elixir return is dependent on the data in the enum and the actual enum

@@ -1,7 +1,8 @@
 #![allow(non_camel_case_types)]
+#![allow(clippy::missing_safety_doc)]
 
 //! [Github](https://github.com/rusterlium/rustler)
-//! [Example](https://github.com/hansihe/Rustler_Example)
+//! [Example](https://github.com/rusterlium/NifIo)
 //!
 //! Rustler is a library for writing Erlang NIFs in safe Rust code. That means there should be no
 //! ways to crash the BEAM (Erlang VM). The library provides facilities for generating the
@@ -20,17 +21,15 @@
 //! automatic NIF compiler for Mix, and utilities for loading the compiled NIF.
 //!
 //! For more information about this, see [the documentation for
-//! rustler_mix](https://hexdocs.pm/rustler/basics.html).
+//! rustler](https://hexdocs.pm/rustler).
 
-#[macro_use(enif_snprintf)]
-extern crate rustler_sys;
-
-mod wrapper;
+#[doc(hidden)]
+pub mod wrapper;
 
 #[doc(hidden)]
 pub mod codegen_runtime;
 
-pub extern crate lazy_static;
+pub use lazy_static;
 
 #[macro_use]
 pub mod types;
@@ -39,7 +38,7 @@ mod term;
 
 pub use crate::term::Term;
 pub use crate::types::{
-    Atom, Binary, Decoder, Encoder, ListIterator, MapIterator, OwnedBinary, Pid,
+    Atom, Binary, Decoder, Encoder, ListIterator, LocalPid, MapIterator, NewBinary, OwnedBinary,
 };
 pub mod resource;
 pub use crate::resource::ResourceArc;
@@ -62,7 +61,13 @@ pub use crate::error::Error;
 pub mod r#return;
 pub use crate::r#return::Return;
 
+#[doc(hidden)]
+mod nif;
+pub use nif::Nif;
+
 pub type NifResult<T> = Result<T, Error>;
 
 #[cfg(feature = "derive")]
-pub use rustler_codegen::{NifMap, NifRecord, NifStruct, NifTuple, NifUnitEnum, NifUntaggedEnum};
+pub use rustler_codegen::{
+    init, nif, NifException, NifMap, NifRecord, NifStruct, NifTuple, NifUnitEnum, NifUntaggedEnum,
+};

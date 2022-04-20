@@ -10,11 +10,12 @@
 /// The second argument is a list of 3-tuples. Each tuple contains information on a single exported
 /// NIF function. The first tuple item is the name you want to export the function into, the second
 /// is the arity (number of arguments) of the exported function. The third argument is a
-/// indentifier of a rust function. This is where your actual NIF will be implemented.
+/// identifier of a rust function. This is where your actual NIF will be implemented.
 ///
 /// The third argument is an `Option<fn(env: &Env, load_info: Term) -> bool>`. If this is
 /// `Some`, the function will execute when the NIF is first loaded by the BEAM.
 #[macro_export]
+#[deprecated(since = "0.22.0", note = "Please use `rustler::init!` instead.")]
 macro_rules! rustler_export_nifs {
     // Strip trailing comma.
     ($name:expr, [$( $exported_nif:tt ),+,], $on_load:expr) => {
@@ -77,9 +78,6 @@ macro_rules! rustler_export_nifs {
                             $crate::rustler_export_nifs!(
                                 internal_handle_nif_call, ($nif_fun, $nif_arity, env, argc, argv))
                         }
-                    //unsafe {
-                    //    $crate::codegen_runtime::handle_nif_call($nif_fun, $nif_arity, env, argc, argv)
-                    //}
                 }
                 nif_func
             },
@@ -88,6 +86,7 @@ macro_rules! rustler_export_nifs {
     };
 
     (internal_handle_nif_call, ($fun:path, $arity:expr, $env:expr, $argc:expr, $argv:expr)) => ({
+        use $crate::Term;
         let env_lifetime = ();
         let env = $crate::Env::new(&env_lifetime, $env);
 
@@ -97,7 +96,7 @@ macro_rules! rustler_export_nifs {
             .collect::<Vec<Term>>();
 
         let result: ::std::thread::Result<_> = ::std::panic::catch_unwind(move || {
-            $crate::codegen_runtime::NifReturnable::as_returned($fun(env, &terms), env)
+            $crate::codegen_runtime::NifReturnable::into_returned($fun(env, &terms), env)
         });
 
         match result {
@@ -113,14 +112,14 @@ macro_rules! rustler_export_nifs {
         #[cfg(not(feature = "alternative_nif_init_name"))]
         #[cfg(unix)]
         #[no_mangle]
-        pub extern "C" fn nif_init() -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
+        extern "C" fn nif_init() -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
             $inner
         }
 
         #[cfg(not(feature = "alternative_nif_init_name"))]
         #[cfg(windows)]
         #[no_mangle]
-        pub extern "C" fn nif_init(callbacks: *mut $crate::codegen_runtime::TWinDynNifCallbacks) -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
+        extern "C" fn nif_init(callbacks: *mut $crate::codegen_runtime::TWinDynNifCallbacks) -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
             unsafe {
                 $crate::codegen_runtime::WIN_DYN_NIF_CALLBACKS = Some(*callbacks);
             }
@@ -131,14 +130,14 @@ macro_rules! rustler_export_nifs {
         #[cfg(feature = "alternative_nif_init_name")]
         #[cfg(unix)]
         #[no_mangle]
-        pub extern "C" fn rustler_nif_init() -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
+        extern "C" fn rustler_nif_init() -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
             $inner
         }
 
         #[cfg(feature = "alternative_nif_init_name")]
         #[cfg(windows)]
         #[no_mangle]
-        pub extern "C" fn rustler_nif_init(callbacks: *mut $crate::codegen_runtime::TWinDynNifCallbacks) -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
+        extern "C" fn rustler_nif_init(callbacks: *mut $crate::codegen_runtime::TWinDynNifCallbacks) -> *const $crate::codegen_runtime::DEF_NIF_ENTRY {
             unsafe {
                 $crate::codegen_runtime::WIN_DYN_NIF_CALLBACKS = Some(*callbacks);
             }

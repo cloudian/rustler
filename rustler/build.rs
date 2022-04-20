@@ -1,57 +1,64 @@
 /// Detect NIF version to build against
+/// It reads from the RUSTLER_NIF_VERSION env var.
+///
+/// If this env var is not present we try to read from the installed Erlang.
+/// If the environment doesn't have Erlang installed, then we use the latest
+/// NIF version and write a warning to stderr.
 use std::env;
 use std::process::Command;
 
-extern crate lazy_static;
-use lazy_static::lazy_static;
-
-extern crate which;
-use which::which;
-
-lazy_static! {
-    // keep this sorted by version number
-    static ref NIF_VERSION: Vec<&'static str> = vec![
-        "2.7", "2.8", "2.9", "2.10", "2.11", "2.12", "2.13", "2.14", "2.15"
-    ];
-}
+// keep this sorted by version number
+const NIF_VERSION: &[&str] = &["2.14", "2.15", "2.16"];
 
 fn main() {
-    let version = match env::var("RUSTLER_NIF_VERSION") {
-        Ok(version) => version,
-        Err(_) => get_version_from_erl(),
-    };
+    let latest_version = NIF_VERSION.last().unwrap().to_string();
+    let version = env::var("RUSTLER_NIF_VERSION").unwrap_or_else(|_| {
+        match get_version_from_erl() {
+            Some(nif_version) if NIF_VERSION.contains(&nif_version.as_str()) => {
+                eprintln!("RUSTLER_NIF_VERSION env var is not set. Using version from Erlang: {}", nif_version);
+                nif_version
+            },
+            Some(ref nif_version) => panic!("The NIF version from Erlang is not supported by Rustler: {}", nif_version),
+            None => {
+                eprintln!("RUSTLER_NIF_VERSION env var is not set and `erl` command is not found. Using version {}", latest_version);
+                latest_version
+            },
+        }
+    });
 
     activate_versions(&version);
+
+    // The following lines are important to tell Cargo to recompile if something changes.
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=RUSTLER_NIF_VERSION");
 }
 
-fn get_version_from_erl() -> String {
-    let erl = which("erl").expect("expected to find 'erl' executable");
+fn get_version_from_erl() -> Option<String> {
     let args = vec![
         "-noshell",
         "-eval",
         r#"io:format("~s~n", [erlang:system_info(nif_version)]), init:stop()."#,
     ];
 
-    let version = Command::new(erl)
-        .args(&args)
-        .output()
-        .expect("failed to execute 'erl'")
-        .stdout;
+    let version = Command::new("erl").args(&args).output().ok()?.stdout;
 
-    let version = String::from_utf8(version).expect("convert version to String");
+    let version = String::from_utf8(version).ok()?;
 
-    version.trim().into()
+    Some(version.trim().into())
 }
 
 fn activate_versions(version: &str) {
     let index = NIF_VERSION
         .iter()
         .position(|&v| v == version)
-        .expect(&format!(
-            "Erlang version {} not handled, please file a a bug report.",
-            version
-        ));
+        .unwrap_or_else(|| {
+            panic!(
+                "Erlang version {} not handled, please file a a bug report.",
+                version
+            )
+        });
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..=index {
         println!(
             "cargo:rustc-cfg=nif_version_{}",
@@ -61,5 +68,5 @@ fn activate_versions(version: &str) {
 }
 
 fn version_feature(version: &str) -> String {
-    version.replace(".", "_")
+    version.replace('.', "_")
 }

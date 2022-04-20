@@ -35,7 +35,7 @@ impl Atom {
     ///
     /// # Errors
     /// `Error::BadArg` if `bytes.len() > 255`.
-    pub fn from_bytes<'a>(env: Env<'a>, bytes: &[u8]) -> NifResult<Atom> {
+    pub fn from_bytes(env: Env, bytes: &[u8]) -> NifResult<Atom> {
         if bytes.len() > 255 {
             return Err(Error::BadArg);
         }
@@ -46,7 +46,7 @@ impl Atom {
     ///
     /// # Errors
     /// `Error::BadArg` if `bytes.len() > 255`.
-    pub fn try_from_bytes<'a>(env: Env<'a>, bytes: &[u8]) -> NifResult<Option<Atom>> {
+    pub fn try_from_bytes(env: Env, bytes: &[u8]) -> NifResult<Option<Atom>> {
         if bytes.len() > 255 {
             return Err(Error::BadArg);
         }
@@ -63,7 +63,7 @@ impl Atom {
     /// # Errors
     /// `Error::BadArg` if `string` contains characters that aren't in Latin-1, or if it's too
     /// long. The maximum length is 255 characters.
-    pub fn from_str<'a>(env: Env<'a>, string: &str) -> NifResult<Atom> {
+    pub fn from_str(env: Env, string: &str) -> NifResult<Atom> {
         if string.is_ascii() {
             // Fast path.
             Atom::from_bytes(env, string.as_bytes())
@@ -146,12 +146,9 @@ unsafe impl Send for Atom {}
 ///
 /// For example, this code:
 ///
-///     #[macro_use] extern crate rustler;
-///     #[macro_use] extern crate lazy_static;
-///
 ///     mod my_atoms {
-///         rustler_atoms! {
-///             atom jpeg;
+///         rustler::atoms! {
+///             jpeg,
 ///         }
 ///     }
 ///     # fn main() {}
@@ -160,33 +157,29 @@ unsafe impl Send for Atom {}
 ///
 /// Multiple atoms can be defined. Each one can have its own doc comment and other attributes.
 ///
-///     # #[macro_use] extern crate rustler;
-///     # #[macro_use] extern crate lazy_static;
-///     rustler_atoms! {
+///     rustler::atoms! {
 ///         /// The `jpeg` atom.
-///         atom jpeg;
+///         jpeg,
 ///
 ///         /// The `png` atom.
-///         atom png;
+///         png,
 ///
 ///         #[allow(non_snake_case)]
-///         atom WebP;
+///         WebP,
 ///     }
 ///     # fn main() {}
 ///
-/// When you need an atom that's not a legal Rust function name, write `atom NAME = "ATOM"`, like
+/// When you need an atom that's not a legal Rust function name, write `NAME = "ATOM"`, like
 /// this:
 ///
-///     # #[macro_use] extern crate rustler;
-///     # #[macro_use] extern crate lazy_static;
-///     rustler_atoms! {
+///     rustler::atoms! {
 ///         /// The `mod` atom. The function isn't called `mod` because that's
 ///         /// a Rust keyword.
-///         atom mod_atom = "mod";
+///         mod_atom = "mod",
 ///
 ///         /// The atom `'hello world'`. Obviously this function can't be
 ///         /// called `hello world` because there's a space in it.
-///         atom hello_world = "hello world";
+///         hello_world = "hello world",
 ///     }
 ///     # fn main() {}
 ///
@@ -197,11 +190,49 @@ unsafe impl Send for Atom {}
 /// The only overhead is checking that the atoms have been created (an atomic integer read).
 ///
 #[macro_export]
+macro_rules! atoms {
+    {
+        $(
+            $( #[$attr:meta] )*
+            $name:ident $( = $str:expr )?
+        ),*$(,)?
+    } => {
+        #[allow(non_snake_case)]
+        struct RustlerAtoms {
+            $( $name : $crate::types::atom::Atom ),*
+        }
+        $crate::lazy_static::lazy_static! {
+            static ref RUSTLER_ATOMS: RustlerAtoms = $crate::env::OwnedEnv::new().run(|env| {
+                RustlerAtoms {
+                    $( $name: $crate::atoms!(@internal_make_atom(env, $name $( = $str)? )) ),*
+                }
+            });
+        }
+        $(
+            $( #[$attr] )*
+            pub fn $name() -> $crate::types::atom::Atom {
+                RUSTLER_ATOMS.$name
+            }
+        )*
+    };
+
+    // Internal helper macros.
+    { @internal_make_atom($env:ident, $name:ident) } => {
+        $crate::atoms!(@internal_make_atom($env, $name = stringify!($name)))
+    };
+    { @internal_make_atom($env:ident, $name:ident = $str:expr) } => {
+        $crate::types::atom::Atom::from_str($env, $str)
+            .ok().expect("rustler::atoms!: bad atom string")
+    };
+}
+
+#[macro_export]
+#[deprecated(since = "0.22.0", note = "Please use `atoms!` instead.")]
 macro_rules! rustler_atoms {
     {
         $(
             $( #[$attr:meta] )*
-            atom $name:ident $( = $str:expr )*;
+            atom $name:ident $( = $str:expr )?;
         )*
     } => {
         #[allow(non_snake_case)]
@@ -211,7 +242,7 @@ macro_rules! rustler_atoms {
         $crate::lazy_static::lazy_static! {
             static ref RUSTLER_ATOMS: RustlerAtoms = $crate::env::OwnedEnv::new().run(|env| {
                 RustlerAtoms {
-                    $( $name: $crate::rustler_atoms!(@internal_make_atom(env, $name $( = $str)* )) ),*
+                    $( $name: $crate::rustler_atoms!(@internal_make_atom(env, $name $( = $str)? )) ),*
                 }
             });
         }
@@ -229,42 +260,48 @@ macro_rules! rustler_atoms {
     };
     { @internal_make_atom($env:ident, $name:ident = $str:expr) } => {
         $crate::types::atom::Atom::from_str($env, $str)
-            .ok().expect("rustler_atoms: bad atom string")
+            .expect("rustler::atoms!: bad atom string")
     };
 }
 
-rustler_atoms! {
+atoms! {
+    /// The `nif_panicked` atom.
+    nif_panicked,
+
     /// The `undefined` atom, commonly used in Erlang.
-    atom undefined;
+    undefined,
 
     /// The `ok` atom, commonly used in success tuples.
-    atom ok;
+    ok,
 
     /// The `error` atom, commonly used in error tuples.
-    atom error;
+    error,
 
     /// The `badarg` atom, which Rustler sometimes returns to indicate that a function was
     /// called with incorrect arguments.
-    atom badarg;
+    badarg,
 
     /// The `false` atom. (Trailing underscore because `false` is a keyword in Rust.)
     ///
     /// If you're looking to convert between Erlang terms and Rust `bool`
     /// values, use `Encoder` and `Decoder` instead.
-    atom false_ = "false";
+    false_ = "false",
 
     /// The `true` atom. (Trailing underscore because `true` is a keyword in Rust.)
     ///
     /// If you're looking to convert between Erlang terms and Rust `bool`
     /// values, use `Encoder` and `Decoder` instead.
-    atom true_ = "true";
+    true_ = "true",
 
     /// The `__struct__` atom used by Elixir.
-    atom __struct__;
+    __struct__,
 
     /// The `first` atom used by `Elixir.Range`.
-    atom first;
+    first,
 
     /// The `last` atom used by `Elixir.Range`.
-    atom last;
+    last,
+
+    /// The `step` atom used by `Elixir.Range` vor Elixir >= v1.12
+    step,
 }

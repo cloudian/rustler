@@ -4,9 +4,8 @@ use crate::{Env, Error, NifResult, Term};
 pub mod atom;
 pub use crate::types::atom::Atom;
 
-#[doc(hidden)]
 pub mod binary;
-pub use crate::types::binary::{Binary, OwnedBinary};
+pub use crate::types::binary::{Binary, NewBinary, OwnedBinary};
 
 #[doc(hidden)]
 pub mod list;
@@ -14,7 +13,7 @@ pub use crate::types::list::ListIterator;
 
 #[doc(hidden)]
 pub mod map;
-pub use crate::types::map::MapIterator;
+pub use self::map::MapIterator;
 
 #[doc(hidden)]
 pub mod primitive;
@@ -23,8 +22,16 @@ pub mod string;
 pub mod tuple;
 
 #[doc(hidden)]
-pub mod pid;
-pub use crate::types::pid::Pid;
+pub mod local_pid;
+pub use self::local_pid::LocalPid;
+
+#[deprecated(since = "0.22.0", note = "Please use local_pid instead")]
+pub mod pid {
+    #[deprecated(since = "0.22.0", note = "Please use LocalPid instead")]
+    pub use super::LocalPid as Pid;
+}
+#[deprecated(since = "0.22.0", note = "Please use LocalPid instead")]
+pub use self::LocalPid as Pid;
 
 pub mod truthy;
 
@@ -116,5 +123,41 @@ where
         } else {
             Err(Error::BadArg)
         }
+    }
+}
+
+impl<'a, K, V> Decoder<'a> for std::collections::HashMap<K, V>
+where
+    K: Decoder<'a> + Eq + std::hash::Hash,
+    V: Decoder<'a>,
+{
+    fn decode(term: Term<'a>) -> NifResult<Self> {
+        let size = term.map_size()?;
+
+        let it = MapIterator::new(term).ok_or(Error::BadArg)?;
+
+        let mut map = std::collections::HashMap::with_capacity(size);
+
+        for (k, v) in it {
+            let k = k.decode()?;
+            let v = v.decode()?;
+            map.insert(k, v);
+        }
+
+        Ok(map)
+    }
+}
+
+impl<K, V> Encoder for std::collections::HashMap<K, V>
+where
+    K: Encoder + Eq + std::hash::Hash,
+    V: Encoder,
+{
+    fn encode<'c>(&self, env: Env<'c>) -> Term<'c> {
+        let (keys, values): (Vec<_>, Vec<_>) = self
+            .iter()
+            .map(|(k, v)| (k.encode(env), v.encode(env)))
+            .unzip();
+        Term::map_from_arrays(env, &keys, &values).unwrap()
     }
 }

@@ -1,10 +1,11 @@
 //! Contains basic wrappers for the Erlang NIF API. Should not be used directly.
 //!
-//! This module should preform validation and make them (reasonably) safe and easy to
+//! This module should perform validation and make them (reasonably) safe and easy to
 //! use from Rust. This module should try to be as non-opinionated as possible, and
 //! should try to stick as close as possible to the original C API.
 //!
 //! Making the APIs nice to use from Rust should be done in the root `rustler` crate.
+#![allow(clippy::upper_case_acronyms)]
 
 pub mod atom;
 pub mod binary;
@@ -30,7 +31,6 @@ pub type size_t = usize;
 
 pub type NIF_ENV = *mut rustler_sys::ErlNifEnv;
 pub type NIF_TERM = size_t;
-pub type NIF_BINARY = *mut rustler_sys::ErlNifBinary;
 pub type NIF_RESOURCE_TYPE = *const rustler_sys::ErlNifResourceType;
 
 pub fn get_nif_resource_type_init_size() -> usize {
