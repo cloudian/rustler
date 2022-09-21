@@ -71,7 +71,7 @@ where
     fn encode<'c>(&self, env: Env<'c>) -> Term<'c> {
         match *self {
             Some(ref value) => value.encode(env),
-            None => atom::nil().encode(env),
+            None => atom::undefined().encode(env),
         }
     }
 }
@@ -85,7 +85,7 @@ where
             Ok(Some(term))
         } else {
             let decoded_atom: atom::Atom = term.decode()?;
-            if decoded_atom == atom::nil() {
+            if decoded_atom == atom::undefined() {
                 Ok(None)
             } else {
                 Err(Error::BadArg)

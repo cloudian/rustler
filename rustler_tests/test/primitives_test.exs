@@ -16,7 +16,7 @@ defmodule RustlerTest.PrimitivesTest do
 
   test "option decoding and encoding" do
     assert 33.0 == RustlerTest.option_inc(32.0)
-    assert nil == RustlerTest.option_inc(nil)
+    assert :undefined == RustlerTest.option_inc(:undefined)
     assert_raise ArgumentError, fn -> RustlerTest.option_inc("hello") end
   end
 

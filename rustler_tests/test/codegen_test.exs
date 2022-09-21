@@ -301,7 +301,7 @@ defmodule RustlerTest.CodegenTest do
 
     assert true == RustlerTest.untagged_enum_with_truthy([1, 2, 3, 4])
     assert false == RustlerTest.untagged_enum_with_truthy(false)
-    assert false == RustlerTest.untagged_enum_with_truthy(nil)
+    assert false == RustlerTest.untagged_enum_with_truthy(:undefined)
   end
 
   test "untagged enum for issue 370" do

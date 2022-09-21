@@ -12,9 +12,9 @@ defmodule RustlerTest.AtomTest do
   end
 
   test "binary to existing atom" do
-    assert RustlerTest.binary_to_existing_atom("test_atom_nonexisting") == nil
+    assert RustlerTest.binary_to_existing_atom("test_atom_nonexisting") == :undefined
     assert RustlerTest.binary_to_atom("test_atom_nonexisting")
-    assert RustlerTest.binary_to_existing_atom("test_atom_nonexisting") != nil
+    assert RustlerTest.binary_to_existing_atom("test_atom_nonexisting") != :undefined
   end
 
   test "atom to string for non-atom should raise" do
